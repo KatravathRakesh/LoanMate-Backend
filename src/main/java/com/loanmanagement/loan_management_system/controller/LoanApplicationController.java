@@ -1,102 +1,234 @@
+
 package com.loanmanagement.loan_management_system.controller;
 
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import org.springframework.security.core.Authentication;
 
 import com.loanmanagement.loan_management_system.entity.LoanApplication;
+import com.loanmanagement.loan_management_system.entity.User;
+import com.loanmanagement.loan_management_system.repository.UserRepository;
 import com.loanmanagement.loan_management_system.service.LoanApplicationService;
 
 import jakarta.validation.Valid;
 
-
 @RestController
 @RequestMapping("/loan")
 public class LoanApplicationController {
-	
-	@Autowired
-	LoanApplicationService loanService;
-	
-	@PostMapping("/apply")
-	public String applyLoan(@Valid @RequestBody LoanApplication Loan) {
-		loanService.applyLoan(Loan);
-		
-		return "Loan Application Submitted Successfully";
-	}
-	
-	
-	@GetMapping("/findAllLoan")
-	public List<LoanApplication> findAllLoan() {
-		return loanService.findAllLoan();
-	}
-	
-	@GetMapping("/findById/{applicationId}")
-	public LoanApplication findLoanById(@PathVariable Long applicationId) {
-		return loanService.findLoanById(applicationId);
-	}
-	
-	@PutMapping("/updateById/{applicationId}")
-	public LoanApplication updateLoanStatus(@PathVariable Long applicationId, @RequestBody String status) {
-		
-		status = status.replace("{", "")
-                .replace("}", "")
-                .replace("\"", "")
-                .replace("status:", "")
-                .trim();
-		
-		return loanService.updateLoanStatus(applicationId, status);
-	}
-	
-	@DeleteMapping("/deleteById/{applicationId}")
-	public String deleteLoanById(@PathVariable Long applicationId ) {
-		
-		loanService.deleteLoan(applicationId);
-		
-		return "Loan Application Deleted Successfully";
-	}
-	
-	@GetMapping("/user/{userId}")
-	public List<LoanApplication> findLoanByuserId(@PathVariable Long userId){
-		return loanService.findLoansByUserId(userId);
-	}
-	
-	@GetMapping("/loan/status/{status}")
-	public List<LoanApplication> findLoanByStatus(@PathVariable String status){
-		return loanService.findLoanByStatus(status);
-	}
-	
-	@GetMapping("/count/pending")
-	public long countPendingApplications() {
-	    return loanService.countPendingApplications();
-	}
-	
-	
-	@GetMapping("/count/Approved")
-	public long countApprovedApplication() {
-		return loanService.countApprovedApplications();
-	}
-	
-	@GetMapping("/count/Rejected")
-	public long countRejectedApplication() {
-		return loanService.countRejectedApplications();
-	}
-	
-	@GetMapping("/countAll")
-	public long countAllApplication() {
-		return loanService.countAllApplications();
-	}
-	
-	@GetMapping("/status/approved")
-	public List<LoanApplication> getApprovedApplications() {
-	    return loanService.findLoanByStatus("APPROVED");
-	}
-	
+
+    @Autowired
+    private LoanApplicationService loanService;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    // Check whether logged-in user is ADMIN
+    private boolean isAdmin(Authentication authentication) {
+        return authentication.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+    }
+
+    // Get logged-in user from JWT email
+    private User getCurrentUser(Authentication authentication) {
+        return userRepository.findByEmail(authentication.getName());
+    }
+
+    // 1. Apply Loan - CUSTOMER only
+    @PostMapping("/apply")
+    public ResponseEntity<?> applyLoan(
+            @Valid @RequestBody LoanApplication loan,
+            Authentication authentication) {
+
+        if (!authentication.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_CUSTOMER"))) {
+            return ResponseEntity.status(403)
+                    .body(Map.of("message", "Only Customers can apply for loans"));
+        }
+
+        User user = getCurrentUser(authentication);
+
+        if (user == null) {
+            return ResponseEntity.status(401)
+                    .body(Map.of("message", "User not found"));
+        }
+
+        // Never trust userId or applicationId from frontend
+        loan.setApplicationId(null);
+        loan.setUserId(user.getUid());
+        loan.setStatus("PENDING");
+
+        loanService.applyLoan(loan);
+
+        return ResponseEntity.ok(
+                Map.of("message", "Loan application submitted successfully"));
+    }
+
+    // 2. Find All Applications - ADMIN only
+    @GetMapping("/findAllLoan")
+    public ResponseEntity<?> findAllLoan(Authentication authentication) {
+
+        if (!isAdmin(authentication)) {
+            return ResponseEntity.status(403)
+                    .body(Map.of("message", "Only Admin can view all applications"));
+        }
+
+        return ResponseEntity.ok(loanService.findAllLoan());
+    }
+
+    // 3. Find Application By ID - ADMIN only
+    @GetMapping("/findById/{applicationId}")
+    public ResponseEntity<?> findLoanById(
+            @PathVariable Long applicationId,
+            Authentication authentication) {
+
+        if (!isAdmin(authentication)) {
+            return ResponseEntity.status(403)
+                    .body(Map.of("message", "Only Admin can view this application"));
+        }
+
+        LoanApplication loan = loanService.findLoanById(applicationId);
+
+        if (loan == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        return ResponseEntity.ok(loan);
+    }
+
+    // 4. Update Application Status - ADMIN only
+    @PutMapping("/updateById/{applicationId}")
+    public ResponseEntity<?> updateLoanStatus(
+            @PathVariable Long applicationId,
+            @RequestBody Map<String, String> request,
+            Authentication authentication) {
+
+        if (!isAdmin(authentication)) {
+            return ResponseEntity.status(403)
+                    .body(Map.of("message", "Only Admin can update application status"));
+        }
+
+        String status = request.get("status");
+
+        if (status == null || status.isBlank()) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("message", "Status is required"));
+        }
+
+        LoanApplication updatedLoan =
+                loanService.updateLoanStatus(applicationId, status);
+
+        return ResponseEntity.ok(updatedLoan);
+    }
+
+    // 5. Delete Application - ADMIN only
+    @DeleteMapping("/deleteById/{applicationId}")
+    public ResponseEntity<?> deleteLoanById(
+            @PathVariable Long applicationId,
+            Authentication authentication) {
+
+        if (!isAdmin(authentication)) {
+            return ResponseEntity.status(403)
+                    .body(Map.of("message", "Only Admin can delete applications"));
+        }
+
+        loanService.deleteLoan(applicationId);
+
+        return ResponseEntity.ok(
+                Map.of("message", "Loan application deleted successfully"));
+    }
+
+    // 6. Find Applications By User ID - ADMIN or Account Owner
+    @GetMapping("/user/{userId}")
+    public ResponseEntity<?> findLoanByUserId(
+            @PathVariable Long userId,
+            Authentication authentication) {
+
+        User user = getCurrentUser(authentication);
+
+        if (user == null) {
+            return ResponseEntity.status(401).build();
+        }
+
+        if (!isAdmin(authentication) && !user.getUid().equals(userId)) {
+            return ResponseEntity.status(403)
+                    .body(Map.of("message", "You can only view your own applications"));
+        }
+
+        return ResponseEntity.ok(loanService.findLoansByUserId(userId));
+    }
+
+    // 7. Find Applications By Status - ADMIN only
+    @GetMapping("/loan/status/{status}")
+    public ResponseEntity<?> findLoanByStatus(
+            @PathVariable String status,
+            Authentication authentication) {
+
+        if (!isAdmin(authentication)) {
+            return ResponseEntity.status(403)
+                    .body(Map.of("message", "Only Admin can view applications by status"));
+        }
+
+        return ResponseEntity.ok(loanService.findLoanByStatus(status));
+    }
+
+    // 8. Count Pending Applications - ADMIN only
+    @GetMapping("/count/pending")
+    public ResponseEntity<?> countPendingApplications(Authentication authentication) {
+
+        if (!isAdmin(authentication)) {
+            return ResponseEntity.status(403).build();
+        }
+
+        return ResponseEntity.ok(loanService.countPendingApplications());
+    }
+
+    // 9. Count Approved Applications - ADMIN only
+    @GetMapping("/count/Approved")
+    public ResponseEntity<?> countApprovedApplication(Authentication authentication) {
+
+        if (!isAdmin(authentication)) {
+            return ResponseEntity.status(403).build();
+        }
+
+        return ResponseEntity.ok(loanService.countApprovedApplications());
+    }
+
+    // 10. Count Rejected Applications - ADMIN only
+    @GetMapping("/count/Rejected")
+    public ResponseEntity<?> countRejectedApplication(Authentication authentication) {
+
+        if (!isAdmin(authentication)) {
+            return ResponseEntity.status(403).build();
+        }
+
+        return ResponseEntity.ok(loanService.countRejectedApplications());
+    }
+
+    // 11. Count All Applications - ADMIN only
+    @GetMapping("/countAll")
+    public ResponseEntity<?> countAllApplication(Authentication authentication) {
+
+        if (!isAdmin(authentication)) {
+            return ResponseEntity.status(403).build();
+        }
+
+        return ResponseEntity.ok(loanService.countAllApplications());
+    }
+
+    // 12. Find Approved Applications - ADMIN only
+    @GetMapping("/status/approved")
+    public ResponseEntity<?> getApprovedApplications(Authentication authentication) {
+
+        if (!isAdmin(authentication)) {
+            return ResponseEntity.status(403).build();
+        }
+
+        return ResponseEntity.ok(
+                loanService.findLoanByStatus("APPROVED"));
+    }
 }

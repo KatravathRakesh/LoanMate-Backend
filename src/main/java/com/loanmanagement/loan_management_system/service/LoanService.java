@@ -15,6 +15,9 @@ public interface LoanService {
 //	Find One Loan By it's ID
 	Loan getLoanById(Long loanId);
 	
+//	 Find loan belonging to a specific customer
+	Loan getLoanByIdAndUserId(Long loanId, Long userId);
+	
 //	Update Status
 	Loan updateLoanStatus(Long loanId, String status);
 	

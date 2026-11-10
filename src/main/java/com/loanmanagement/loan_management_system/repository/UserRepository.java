@@ -8,4 +8,10 @@ import com.loanmanagement.loan_management_system.entity.User;
 public interface UserRepository extends JpaRepository<User, Long> {
 
 	User findByEmail(String email);
+	
+	boolean existsByRole(String role);
+	
+	long countByRole(String role);
+
+	boolean existsByEmail(String email);
 }

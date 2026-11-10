@@ -42,6 +42,12 @@ public class LoanServiceImp implements LoanService {
 	public Loan getLoanById(Long loanId) {
 		return LoanRepo.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found with ID: " + loanId));
 	}
+	
+	@Override
+	public Loan getLoanByIdAndUserId(Long loanId, Long userId) {
+
+	    return LoanRepo.findByLoanIdAndUserId(loanId, userId);
+	}
 
 	@Override
 	public Loan updateLoanStatus(Long loanId, String status) {

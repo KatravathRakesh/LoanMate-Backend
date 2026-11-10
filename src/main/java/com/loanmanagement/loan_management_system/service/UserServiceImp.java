@@ -1,8 +1,10 @@
+
 package com.loanmanagement.loan_management_system.service;
 
 import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import com.loanmanagement.loan_management_system.entity.User;
@@ -12,22 +14,44 @@ import com.loanmanagement.loan_management_system.repository.UserRepository;
 public class UserServiceImp implements UserService {
 
 	@Autowired
-	UserRepository userRepo;
+	private UserRepository userRepo;
 
+	@Autowired
+	private PasswordEncoder passwordEncoder;
+
+	// 1. Register User
 	@Override
-	public void registerUser(User u) {
-		userRepo.save(u);
+	public void registerUser(User user) {
 
+		if (user.getEmail() == null || user.getEmail().isBlank()) {
+			throw new IllegalArgumentException("Email is required");
+		}
+
+		if (user.getPassword() == null || user.getPassword().length() < 8) {
+			throw new IllegalArgumentException("Password must contain at least 8 characters");
+		}
+
+		if (userRepo.existsByEmail(user.getEmail())) {
+			throw new IllegalArgumentException("Email already registered");
+		}
+
+		// Backend controls ID, role and password
+		user.setUid(null);
+		user.setRole("CUSTOMER");
+		user.setPassword(passwordEncoder.encode(user.getPassword()));
+
+		userRepo.save(user);
 	}
 
+	// 2. Find User By ID
 	@Override
 	public User findUser(Long uid) {
 		return userRepo.findById(uid).orElse(null);
-
 	}
 
+	// 3. Update User
 	@Override
-	public User updateUser(Long uid, User u) {
+	public User updateUser(Long uid, User updatedData) {
 
 		User user = userRepo.findById(uid).orElse(null);
 
@@ -35,95 +59,101 @@ public class UserServiceImp implements UserService {
 			return null;
 		}
 
-		// Update Full Name
-		if (u.getUname() != null && !u.getUname().isEmpty()) {
-			user.setUname(u.getUname());
+		if (updatedData.getUname() != null && !updatedData.getUname().isBlank()) {
+			user.setUname(updatedData.getUname());
 		}
 
-		// Update Email
-		if (u.getEmail() != null && !u.getEmail().isEmpty()) {
-			user.setEmail(u.getEmail());
+		if (updatedData.getEmail() != null && !updatedData.getEmail().isBlank()) {
+
+			User existingUser = userRepo.findByEmail(updatedData.getEmail());
+
+			if (existingUser != null && !existingUser.getUid().equals(uid)) {
+				throw new IllegalArgumentException("Email already registered");
+			}
+
+			user.setEmail(updatedData.getEmail());
 		}
 
-		// Update Mobile Number
-		if (u.getMobile() != null && !u.getMobile().isEmpty()) {
-			user.setMobile(u.getMobile());
+		if (updatedData.getMobile() != null && !updatedData.getMobile().isBlank()) {
+			user.setMobile(updatedData.getMobile());
 		}
 
-		// Update Address
-		if (u.getAddress() != null && !u.getAddress().isEmpty()) {
-			user.setAddress(u.getAddress());
+		if (updatedData.getAddress() != null && !updatedData.getAddress().isBlank()) {
+			user.setAddress(updatedData.getAddress());
 		}
 
-		// Update Date of Birth
-		if (u.getDob() != null) {
-			user.setDob(u.getDob());
+		if (updatedData.getDob() != null) {
+			user.setDob(updatedData.getDob());
 		}
 
-		// Update Gender
-		if (u.getGender() != null && !u.getGender().isEmpty()) {
-			user.setGender(u.getGender());
+		if (updatedData.getGender() != null && !updatedData.getGender().isBlank()) {
+			user.setGender(updatedData.getGender());
 		}
 
-		// Update PAN Number
-		if (u.getPanNumber() != null && !u.getPanNumber().isEmpty()) {
-			user.setPanNumber(u.getPanNumber());
+		if (updatedData.getPanNumber() != null && !updatedData.getPanNumber().isBlank()) {
+			user.setPanNumber(updatedData.getPanNumber());
 		}
 
-		// Update Aadhaar Number
-		if (u.getAadhaarNumber() != null && !u.getAadhaarNumber().isEmpty()) {
-			user.setAadhaarNumber(u.getAadhaarNumber());
+		if (updatedData.getAadhaarNumber() != null && !updatedData.getAadhaarNumber().isBlank()) {
+			user.setAadhaarNumber(updatedData.getAadhaarNumber());
 		}
 
-		// Update profile image
-		if (u.getProfileImage() != null && !u.getProfileImage().isEmpty()) {
-		    user.setProfileImage(u.getProfileImage());
+		if (updatedData.getProfileImage() != null && !updatedData.getProfileImage().isBlank()) {
+			user.setProfileImage(updatedData.getProfileImage());
 		}
-		
+
+		// Never accept role or password changes through this method
 		return userRepo.save(user);
 	}
 
+	// 4. Delete User
 	@Override
 	public void deleteUser(Long uid) {
-		userRepo.deleteById(uid);
 
+		if (!userRepo.existsById(uid)) {
+			throw new RuntimeException("User not found");
+		}
+
+		userRepo.deleteById(uid);
 	}
 
+	// 5. Login User
 	@Override
 	public User loginUser(String email, String password) {
+
 		User user = userRepo.findByEmail(email);
 
-		if (user != null && user.getPassword().equals(password)) {
+		if (user != null && passwordEncoder.matches(password, user.getPassword())) {
 			return user;
 		}
 
 		return null;
-
 	}
 
+	// 6. Change Password
 	@Override
 	public boolean changePassword(Long uid, String oldPassword, String newPassword) {
+
 		User user = userRepo.findById(uid).orElse(null);
 
 		if (user == null) {
 			return false;
 		}
 
-		// Check current password
-		if (!user.getPassword().equals(oldPassword)) {
+		if (!passwordEncoder.matches(oldPassword, user.getPassword())) {
 			return false;
 		}
 
-		// Update new password
-		user.setPassword(newPassword);
+		user.setPassword(passwordEncoder.encode(newPassword));
 
 		userRepo.save(user);
 
 		return true;
 	}
 
+	// 7. Find All Users
 	@Override
 	public List<User> findAllUsers() {
-	    return userRepo.findAll();
+		return userRepo.findAll();
 	}
 }

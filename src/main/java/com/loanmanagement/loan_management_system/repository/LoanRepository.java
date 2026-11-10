@@ -18,6 +18,8 @@ public interface LoanRepository  extends JpaRepository<Loan, Long>{
 	
 	long countByStatus(String status);
 	
+	Loan findByLoanIdAndUserId(Long loanId, Long userId);
+	
 	
 	
 }

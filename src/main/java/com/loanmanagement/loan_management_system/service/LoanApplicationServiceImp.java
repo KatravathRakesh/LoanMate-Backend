@@ -1,3 +1,4 @@
+
 package com.loanmanagement.loan_management_system.service;
 
 import java.time.LocalDate;
@@ -5,119 +6,142 @@ import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import com.loanmanagement.loan_management_system.entity.Loan;
 import com.loanmanagement.loan_management_system.entity.LoanApplication;
 import com.loanmanagement.loan_management_system.repository.LoanApplicationRepository;
-import com.loanmanagement.loan_management_system.entity.Loan;
 import com.loanmanagement.loan_management_system.repository.LoanRepository;
 
 @Service
 public class LoanApplicationServiceImp implements LoanApplicationService {
 
-	@Autowired
-	LoanApplicationRepository loanRepo;
+    @Autowired
+    private LoanApplicationRepository loanRepo;
 
-	@Autowired
-	LoanRepository loanRepository;
+    @Autowired
+    private LoanRepository loanRepository;
 
-	@Override
-	public void applyLoan(LoanApplication loan) {
-		loan.setStatus("PENDING");
-		loanRepo.save(loan);
+    // 1. Apply New Loan
+    @Override
+    public void applyLoan(LoanApplication loan) {
 
-	}
+        loan.setApplicationId(null);
+        loan.setStatus("PENDING");
+        loan.setApplicationDate(null);
 
-	@Override
-	public List<LoanApplication> findAllLoan() {
-		return loanRepo.findAll();
-	}
+        loanRepo.save(loan);
+    }
 
-	@Override
-	public LoanApplication findLoanById(Long applicationId) {
-		return loanRepo.findById(applicationId).orElse(null);
-	}
+    // 2. Find All Applications
+    @Override
+    public List<LoanApplication> findAllLoan() {
+        return loanRepo.findAll();
+    }
 
-	 @Override
-	 public LoanApplication updateLoanStatus(Long applicationId, String s) {
+    // 3. Find Application By ID
+    @Override
+    public LoanApplication findLoanById(Long applicationId) {
 
-	     LoanApplication loanApplication =
-	             loanRepo.findById(applicationId)
-	                     .orElseThrow(() ->
-	                             new RuntimeException("Loan application not found"));
+        return loanRepo.findById(applicationId).orElse(null);
+    }
 
-	     if (s == null || s.trim().isEmpty()) {
-	         throw new IllegalArgumentException("Loan status cannot be empty");
-	     }
+    // 4. Update Application Status
+    @Override
+    @Transactional
+    public LoanApplication updateLoanStatus(Long applicationId, String status) {
 
-	     s = s.trim().toUpperCase();
+        LoanApplication application = loanRepo.findById(applicationId)
+                .orElseThrow(() ->
+                        new RuntimeException("Loan application not found"));
 
-	     if (!s.equals("PENDING")
-	             && !s.equals("APPROVED")
-	             && !s.equals("REJECTED")) {
-	         throw new IllegalArgumentException("Invalid loan status");
-	     }
+        if (status == null || status.trim().isEmpty()) {
+            throw new IllegalArgumentException("Loan status cannot be empty");
+        }
 
-	     loanApplication.setStatus(s);
-	     loanRepo.save(loanApplication);
+        status = status.trim().toUpperCase();
 
-	     if (s.equals("APPROVED")
-	             && !loanRepository.existsByApplicationId(applicationId)) {
+        if (!status.equals("PENDING")
+                && !status.equals("APPROVED")
+                && !status.equals("REJECTED")) {
 
-	         Loan loan = new Loan();
+            throw new IllegalArgumentException("Invalid loan status");
+        }
 
-	         loan.setApplicationId(loanApplication.getApplicationId());
-	         loan.setUserId(loanApplication.getUserId());
-	         loan.setLoanAmount(loanApplication.getLoanAmount());
-	         loan.setInterestRate(10.5);
-	         loan.setTenure(loanApplication.getTenure());
-	         loan.setStatus("ACTIVE");
+        application.setStatus(status);
 
-	         loan.setTotalPaid(0.0);
-	         loan.setRemainingAmount(loan.getLoanAmount());
-	         
-	      // Set loan start date when approved
-	         loan.setLoanStartDate(LocalDate.now());
+        loanRepo.save(application);
 
-	         loanRepository.save(loan);
-	     }
+        // Create a loan only when application is approved
+        // Avoid duplicate loan creation
+        if (status.equals("APPROVED")
+                && !loanRepository.existsByApplicationId(applicationId)) {
 
-	     return loanApplication;
-	 }
+            Loan loan = new Loan();
 
-	@Override
-	public void deleteLoan(Long applicationId) {
-		loanRepo.deleteById(applicationId);
+            loan.setApplicationId(application.getApplicationId());
+            loan.setUserId(application.getUserId());
+            loan.setLoanAmount(application.getLoanAmount());
+            loan.setInterestRate(10.5);
+            loan.setTenure(application.getTenure());
+            loan.setStatus("ACTIVE");
 
-	}
+            loan.setTotalPaid(0.0);
+            loan.setRemainingAmount(application.getLoanAmount());
 
-	@Override
-	public List<LoanApplication> findLoansByUserId(Long userId) {
-		return loanRepo.findByUserId(userId);
-	}
+            loan.setLoanStartDate(LocalDate.now());
 
-	@Override
-	public List<LoanApplication> findLoanByStatus(String status) {
-		return loanRepo.findByStatus(status);
-	}
+            loanRepository.save(loan);
+        }
 
-	@Override
-	public long countPendingApplications() {
-		return loanRepo.countByStatus("PENDING");
-	}
+        return application;
+    }
 
-	@Override
-	public long countApprovedApplications() {
-		return loanRepo.countByStatus("Approved");
-	}
+    // 5. Delete Application
+    @Override
+    public void deleteLoan(Long applicationId) {
 
-	@Override
-	public long countRejectedApplications() {
-		return loanRepo.countByStatus("Rejected");
-	}
+        if (!loanRepo.existsById(applicationId)) {
+            throw new RuntimeException("Loan application not found");
+        }
 
-	@Override
-	public long countAllApplications() {
-		return loanRepo.count();
-	}
+        loanRepo.deleteById(applicationId);
+    }
 
+    // 6. Find Applications By User ID
+    @Override
+    public List<LoanApplication> findLoansByUserId(Long userId) {
+        return loanRepo.findByUserId(userId);
+    }
+
+    // 7. Find Applications By Status
+    @Override
+    public List<LoanApplication> findLoanByStatus(String status) {
+
+        return loanRepo.findByStatus(status.trim().toUpperCase());
+    }
+
+    // 8. Count Pending Applications
+    @Override
+    public long countPendingApplications() {
+        return loanRepo.countByStatus("PENDING");
+    }
+
+    // 9. Count Approved Applications
+    @Override
+    public long countApprovedApplications() {
+        return loanRepo.countByStatus("APPROVED");
+    }
+
+    // 10. Count Rejected Applications
+    @Override
+    public long countRejectedApplications() {
+        return loanRepo.countByStatus("REJECTED");
+    }
+
+    // 11. Count All Applications
+    @Override
+    public long countAllApplications() {
+        return loanRepo.count();
+    }
 }
