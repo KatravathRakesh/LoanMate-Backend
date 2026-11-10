@@ -1,0 +1,8 @@
+.git
+.gitignore
+.settings
+.classpath
+.project
+.vscode
+target
+src/main/resources/application-local.properties
