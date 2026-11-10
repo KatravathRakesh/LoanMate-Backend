@@ -12,13 +12,13 @@ import com.loanmanagement.loan_management_system.repository.UserRepository;
 @Configuration
 public class AdminInitializer {
 
-	@Value("${ADMIN_NAME}")
+	@Value("${ADMIN_NAME:Admin}")
 	private String adminName;
 
-	@Value("${ADMIN_EMAIL}")
+	@Value("${ADMIN_EMAIL:admin@example.com}")
 	private String adminEmail;
 
-	@Value("${ADMIN_PASSWORD}")
+	@Value("${ADMIN_PASSWORD:}")
 	private String adminPassword;
 
 	@Bean
@@ -26,6 +26,10 @@ public class AdminInitializer {
 
 		return _ -> {
 
+			if (adminPassword.isBlank()) {
+			    System.out.println("Admin creation skipped: ADMIN_PASSWORD is not configured.");
+			    return;
+			}
 			long adminCount = userRepository.countByRole("ADMIN");
 
 			if (adminCount > 1) {
