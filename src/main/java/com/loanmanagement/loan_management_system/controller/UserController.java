@@ -21,267 +21,318 @@ import com.loanmanagement.loan_management_system.service.UserService;
 @RequestMapping("/user")
 public class UserController {
 
-	@Autowired
-	private UserService userService;
+    @Autowired
+    private UserService userService;
 
-	@Autowired
-	private UserRepository userRepository;
+    @Autowired
+    private UserRepository userRepository;
 
-	@Autowired
-	private PasswordResetService passwordResetService;
+    @Autowired
+    private PasswordResetService passwordResetService;
 
-	@Autowired
-	private JwtService jwtService;
+    @Autowired
+    private JwtService jwtService;
 
-	// Check ADMIN role
-	private boolean isAdmin(Authentication authentication) {
-		return authentication.getAuthorities().stream().anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
-	}
+    // Check ADMIN role
+    private boolean isAdmin(Authentication authentication) {
+        return authentication.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+    }
 
-	// Get currently logged-in user
-	private User getCurrentUser(Authentication authentication) {
-		return userRepository.findByEmail(authentication.getName());
-	}
+    // Get currently logged-in user
+    private User getCurrentUser(Authentication authentication) {
+        return userRepository.findByEmail(authentication.getName());
+    }
 
-	// Return safe user details without password, PAN or Aadhaar
-	private Map<String, Object> userResponse(User user) {
+    // General safe user details
+    // Password, PAN and Aadhaar are not included
+    private Map<String, Object> userResponse(User user) {
 
-		Map<String, Object> response = new HashMap<>();
+        Map<String, Object> response = new HashMap<>();
 
-		response.put("uid", user.getUid());
-		response.put("uname", user.getUname());
-		response.put("email", user.getEmail());
-		response.put("role", user.getRole());
-		response.put("mobile", user.getMobile());
-		response.put("address", user.getAddress());
-		response.put("dob", user.getDob());
-		response.put("gender", user.getGender());
-		response.put("profileImage", user.getProfileImage());
+        response.put("uid", user.getUid());
+        response.put("uname", user.getUname());
+        response.put("email", user.getEmail());
+        response.put("role", user.getRole());
+        response.put("mobile", user.getMobile());
+        response.put("address", user.getAddress());
+        response.put("dob", user.getDob());
+        response.put("gender", user.getGender());
+        response.put("profileImage", user.getProfileImage());
 
-		return response;
-	}
+        return response;
+    }
 
-	// 1. Register - Public
-	@PostMapping("/register")
-	public ResponseEntity<?> registerUser(@RequestBody User user) {
+    // Profile details: PAN and Aadhaar only for account owner
+    private Map<String, Object> profileResponse(User user, boolean isOwner) {
 
-		user.setUid(null);
-		user.setRole("CUSTOMER");
+        Map<String, Object> response = userResponse(user);
 
-		userService.registerUser(user);
+        if (isOwner) {
+            response.put("panNumber", user.getPanNumber());
+            response.put("aadhaarNumber", user.getAadhaarNumber());
+        }
 
-		return ResponseEntity.ok(Map.of("message", "User registered successfully"));
-	}
+        return response;
+    }
 
-	// 2. Find User - ADMIN or Account Owner
-	@GetMapping("/{uid}")
-	public ResponseEntity<?> findUser(@PathVariable Long uid, Authentication authentication) {
+    // 1. Register - Public
+    @PostMapping("/register")
+    public ResponseEntity<?> registerUser(@RequestBody User user) {
 
-		User currentUser = getCurrentUser(authentication);
+        user.setUid(null);
+        user.setRole("CUSTOMER");
 
-		if (currentUser == null) {
-			return ResponseEntity.status(401).build();
-		}
+        userService.registerUser(user);
 
-		if (!isAdmin(authentication) && !currentUser.getUid().equals(uid)) {
-			return ResponseEntity.status(403).body(Map.of("message", "You can only view your own profile"));
-		}
+        return ResponseEntity.ok(
+                Map.of("message", "User registered successfully"));
+    }
 
-		User user = userService.findUser(uid);
+    // 2. Find User - ADMIN or Account Owner
+    @GetMapping("/{uid}")
+    public ResponseEntity<?> findUser(
+            @PathVariable Long uid,
+            Authentication authentication) {
 
-		if (user == null) {
-			return ResponseEntity.notFound().build();
-		}
+        User currentUser = getCurrentUser(authentication);
 
-		return ResponseEntity.ok(userResponse(user));
-	}
+        if (currentUser == null) {
+            return ResponseEntity.status(401).build();
+        }
 
-	// 3. Update User - ADMIN or Account Owner
-	@PutMapping("/{uid}")
-	public ResponseEntity<?> updateUser(@PathVariable Long uid, @RequestBody User user, Authentication authentication) {
+        if (!isAdmin(authentication) && !currentUser.getUid().equals(uid)) {
+            return ResponseEntity.status(403)
+                    .body(Map.of("message", "You can only view your own profile"));
+        }
 
-		User currentUser = getCurrentUser(authentication);
+        User user = userService.findUser(uid);
 
-		if (currentUser == null) {
-			return ResponseEntity.status(401).build();
-		}
+        if (user == null) {
+            return ResponseEntity.notFound().build();
+        }
 
-		if (!isAdmin(authentication) && !currentUser.getUid().equals(uid)) {
-			return ResponseEntity.status(403).body(Map.of("message", "You can only update your own profile"));
-		}
+        boolean isOwner = currentUser.getUid().equals(uid);
 
-		User updatedUser = userService.updateUser(uid, user);
+        return ResponseEntity.ok(profileResponse(user, isOwner));
+    }
 
-		if (updatedUser == null) {
-			return ResponseEntity.notFound().build();
-		}
+    // 3. Update User - ADMIN or Account Owner
+    @PutMapping("/{uid}")
+    public ResponseEntity<?> updateUser(
+            @PathVariable Long uid,
+            @RequestBody User user,
+            Authentication authentication) {
 
-		return ResponseEntity.ok(userResponse(updatedUser));
-	}
+        User currentUser = getCurrentUser(authentication);
 
-	// 4. Delete User - ADMIN only
-	@DeleteMapping("/{uid}")
-	public ResponseEntity<?> deleteUser(@PathVariable Long uid, Authentication authentication) {
+        if (currentUser == null) {
+            return ResponseEntity.status(401).build();
+        }
 
-		if (!isAdmin(authentication)) {
-			return ResponseEntity.status(403).body(Map.of("message", "Only Admin can delete users"));
-		}
+        if (!isAdmin(authentication) && !currentUser.getUid().equals(uid)) {
+            return ResponseEntity.status(403)
+                    .body(Map.of("message", "You can only update your own profile"));
+        }
 
-		User targetUser = userService.findUser(uid);
+        User updatedUser = userService.updateUser(uid, user);
 
-		if (targetUser == null) {
-			return ResponseEntity.notFound().build();
-		}
+        if (updatedUser == null) {
+            return ResponseEntity.notFound().build();
+        }
 
-		if ("ADMIN".equalsIgnoreCase(targetUser.getRole())) {
-			return ResponseEntity.status(403)
-					.body(Map.of("message", "Admin accounts cannot be deleted through this API"));
-		}
+        boolean isOwner = currentUser.getUid().equals(uid);
 
-		userService.deleteUser(uid);
+        return ResponseEntity.ok(profileResponse(updatedUser, isOwner));
+    }
 
-		return ResponseEntity.ok(Map.of("message", "User deleted successfully"));
-	}
+    // 4. Delete User - ADMIN only
+    @DeleteMapping("/{uid}")
+    public ResponseEntity<?> deleteUser(
+            @PathVariable Long uid,
+            Authentication authentication) {
 
-	// 5. Login - Public
-	@PostMapping("/login")
-	public ResponseEntity<?> loginUser(@RequestBody Map<String, String> data) {
+        if (!isAdmin(authentication)) {
+            return ResponseEntity.status(403)
+                    .body(Map.of("message", "Only Admin can delete users"));
+        }
 
-		String email = data.get("email");
-		String password = data.get("password");
+        User targetUser = userService.findUser(uid);
 
-		if (email == null || password == null || email.isBlank() || password.isBlank()) {
+        if (targetUser == null) {
+            return ResponseEntity.notFound().build();
+        }
 
-			return ResponseEntity.badRequest().body(Map.of("message", "Email and password are required"));
-		}
+        if ("ADMIN".equalsIgnoreCase(targetUser.getRole())) {
+            return ResponseEntity.status(403)
+                    .body(Map.of("message", "Admin accounts cannot be deleted through this API"));
+        }
 
-		User user = userService.loginUser(email, password);
+        userService.deleteUser(uid);
 
-		if (user == null) {
-			return ResponseEntity.status(401).body(Map.of("message", "Invalid Email or Password"));
-		}
+        return ResponseEntity.ok(
+                Map.of("message", "User deleted successfully"));
+    }
 
-		String token = jwtService.generateToken(user.getEmail(), user.getRole());
+    // 5. Login - Public
+    @PostMapping("/login")
+    public ResponseEntity<?> loginUser(@RequestBody Map<String, String> data) {
 
-		Map<String, Object> response = userResponse(user);
+        String email = data.get("email");
+        String password = data.get("password");
 
-		response.put("message", "Login successful");
-		response.put("token", token);
+        if (email == null || password == null || email.isBlank() || password.isBlank()) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("message", "Email and password are required"));
+        }
 
-		return ResponseEntity.ok(response);
-	}
+        User user = userService.loginUser(email, password);
 
-	// 6. Change Password - Account Owner only
-	@PostMapping("/{uid}/change-password")
-	public ResponseEntity<?> changePassword(@PathVariable Long uid, @RequestBody Map<String, String> data,
-			Authentication authentication) {
+        if (user == null) {
+            return ResponseEntity.status(401)
+                    .body(Map.of("message", "Invalid Email or Password"));
+        }
 
-		User currentUser = getCurrentUser(authentication);
+        String token = jwtService.generateToken(user.getEmail(), user.getRole());
 
-		if (currentUser == null) {
-			return ResponseEntity.status(401).build();
-		}
+        Map<String, Object> response = userResponse(user);
 
-		if (!currentUser.getUid().equals(uid)) {
-			return ResponseEntity.status(403).body(Map.of("message", "You can only change your own password"));
-		}
+        response.put("message", "Login successful");
+        response.put("token", token);
 
-		String oldPassword = data.get("oldPassword");
-		String newPassword = data.get("newPassword");
+        return ResponseEntity.ok(response);
+    }
 
-		if (oldPassword == null || newPassword == null || oldPassword.isBlank() || newPassword.isBlank()) {
+    // 6. Change Password - Account Owner only
+    @PostMapping("/{uid}/change-password")
+    public ResponseEntity<?> changePassword(
+            @PathVariable Long uid,
+            @RequestBody Map<String, String> data,
+            Authentication authentication) {
 
-			return ResponseEntity.badRequest().body(Map.of("message", "Please enter all password fields"));
-		}
+        User currentUser = getCurrentUser(authentication);
 
-		if (newPassword.length() < 8) {
-			return ResponseEntity.badRequest()
-					.body(Map.of("message", "New password must contain at least 8 characters"));
-		}
+        if (currentUser == null) {
+            return ResponseEntity.status(401).build();
+        }
 
-		boolean changed = userService.changePassword(uid, oldPassword, newPassword);
+        if (!currentUser.getUid().equals(uid)) {
+            return ResponseEntity.status(403)
+                    .body(Map.of("message", "You can only change your own password"));
+        }
 
-		if (changed) {
-			return ResponseEntity.ok(Map.of("message", "Password changed successfully"));
-		}
+        String oldPassword = data.get("oldPassword");
+        String newPassword = data.get("newPassword");
 
-		return ResponseEntity.badRequest().body(Map.of("message", "Current password is incorrect"));
-	}
+        if (oldPassword == null || newPassword == null
+                || oldPassword.isBlank() || newPassword.isBlank()) {
 
-	// 7. Find All Users - ADMIN only
-	@GetMapping("/all")
-	public ResponseEntity<?> findAllUsers(Authentication authentication) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("message", "Please enter all password fields"));
+        }
 
-		if (!isAdmin(authentication)) {
-			return ResponseEntity.status(403).body(Map.of("message", "Only Admin can view all users"));
-		}
+        if (newPassword.length() < 8) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("message", "New password must contain at least 8 characters"));
+        }
 
-		List<Map<String, Object>> users = userService.findAllUsers().stream().map(this::userResponse)
-				.collect(Collectors.toList());
+        boolean changed = userService.changePassword(uid, oldPassword, newPassword);
 
-		return ResponseEntity.ok(users);
-	}
+        if (changed) {
+            return ResponseEntity.ok(
+                    Map.of("message", "Password changed successfully"));
+        }
 
-	// 8. Forgot Password - Public
-	@PostMapping("/forgot-password")
-	public ResponseEntity<?> forgotPassword(@RequestBody Map<String, String> data) {
+        return ResponseEntity.badRequest()
+                .body(Map.of("message", "Current password is incorrect"));
+    }
 
-		String email = data.get("email");
+    // 7. Find All Users - ADMIN only
+    @GetMapping("/all")
+    public ResponseEntity<?> findAllUsers(Authentication authentication) {
 
-		if (email == null || email.isBlank()) {
-			return ResponseEntity.badRequest().body(Map.of("message", "Email is required"));
-		}
+        if (!isAdmin(authentication)) {
+            return ResponseEntity.status(403)
+                    .body(Map.of("message", "Only Admin can view all users"));
+        }
 
-		try {
-			passwordResetService.sendOtp(email);
-		} catch (Exception e) {
-			// Keep the response generic to avoid revealing whether an account exists
-		}
+        List<Map<String, Object>> users = userService.findAllUsers()
+                .stream()
+                .map(this::userResponse)
+                .collect(Collectors.toList());
 
-		return ResponseEntity.ok(Map.of("message", "If the account exists, an OTP will be sent."));
-	}
+        return ResponseEntity.ok(users);
+    }
 
-	// 9. Verify OTP - Public
-	@PostMapping("/verify-otp")
-	public ResponseEntity<?> verifyOtp(@RequestBody Map<String, String> data) {
+    // 8. Forgot Password - Public
+    @PostMapping("/forgot-password")
+    public ResponseEntity<?> forgotPassword(@RequestBody Map<String, String> data) {
 
-		String email = data.get("email");
-		String otp = data.get("otp");
+        String email = data.get("email");
 
-		if (email == null || otp == null || email.isBlank() || otp.isBlank()) {
+        if (email == null || email.isBlank()) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("message", "Email is required"));
+        }
 
-			return ResponseEntity.badRequest().body(Map.of("message", "Email and OTP are required"));
-		}
+        try {
+            passwordResetService.sendOtp(email);
+        } catch (Exception e) {
+            // Keep response generic
+        }
 
-		String resetToken = passwordResetService.verifyOtp(email, otp);
+        return ResponseEntity.ok(
+                Map.of("message", "If the account exists, an OTP will be sent."));
+    }
 
-		if (resetToken != null) {
-			return ResponseEntity.ok(Map.of("message", "OTP verified successfully", "resetToken", resetToken));
-		}
+    // 9. Verify OTP - Public
+    @PostMapping("/verify-otp")
+    public ResponseEntity<?> verifyOtp(@RequestBody Map<String, String> data) {
 
-		return ResponseEntity.badRequest().body(Map.of("message", "Invalid or expired OTP"));
-	}
+        String email = data.get("email");
+        String otp = data.get("otp");
 
-	// 10. Reset Password - Public, protected by reset token
-	@PostMapping("/reset-password")
-	public ResponseEntity<?> resetPassword(@RequestBody Map<String, String> data) {
+        if (email == null || otp == null || email.isBlank() || otp.isBlank()) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("message", "Email and OTP are required"));
+        }
 
-		String email = data.get("email");
-		String resetToken = data.get("resetToken");
-		String newPassword = data.get("newPassword");
+        String resetToken = passwordResetService.verifyOtp(email, otp);
 
-		if (email == null || resetToken == null || newPassword == null || email.isBlank() || resetToken.isBlank()
-				|| newPassword.length() < 8) {
+        if (resetToken != null) {
+            return ResponseEntity.ok(
+                    Map.of("message", "OTP verified successfully", "resetToken", resetToken));
+        }
 
-			return ResponseEntity.badRequest().body(Map.of("message", "Invalid password reset details"));
-		}
+        return ResponseEntity.badRequest()
+                .body(Map.of("message", "Invalid or expired OTP"));
+    }
 
-		boolean reset = passwordResetService.resetPassword(email, resetToken, newPassword);
+    // 10. Reset Password - Public
+    @PostMapping("/reset-password")
+    public ResponseEntity<?> resetPassword(@RequestBody Map<String, String> data) {
 
-		if (reset) {
-			return ResponseEntity.ok(Map.of("message", "Password reset successfully"));
-		}
+        String email = data.get("email");
+        String resetToken = data.get("resetToken");
+        String newPassword = data.get("newPassword");
 
-		return ResponseEntity.badRequest().body(Map.of("message", "Invalid or expired reset token"));
-	}
+        if (email == null || resetToken == null || newPassword == null
+                || email.isBlank() || resetToken.isBlank()
+                || newPassword.length() < 8) {
+
+            return ResponseEntity.badRequest()
+                    .body(Map.of("message", "Invalid password reset details"));
+        }
+
+        boolean reset = passwordResetService.resetPassword(
+                email, resetToken, newPassword);
+
+        if (reset) {
+            return ResponseEntity.ok(
+                    Map.of("message", "Password reset successfully"));
+        }
+
+        return ResponseEntity.badRequest()
+                .body(Map.of("message", "Invalid or expired reset token"));
+    }
 }
