@@ -1,14 +1,20 @@
+
 package com.loanmanagement.loan_management_system.service;
 
-
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.mail.MailException;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
 
 @Service
 public class EmailService {
+
+    private static final Logger logger =
+            LoggerFactory.getLogger(EmailService.class);
 
     @Autowired
     private JavaMailSender mailSender;
@@ -18,21 +24,30 @@ public class EmailService {
 
     public void sendOtpEmail(String toEmail, String otp) {
 
-        SimpleMailMessage message = new SimpleMailMessage();
+        try {
+            SimpleMailMessage message = new SimpleMailMessage();
 
-        message.setFrom(fromEmail);
-        message.setTo(toEmail);
-        message.setSubject("LoanMate - Password Reset OTP");
+            message.setFrom(fromEmail);
+            message.setTo(toEmail);
+            message.setSubject("LoanMate - Password Reset OTP");
 
-        message.setText(
-            "Hello,\n\n" +
-            "Your LoanMate password reset OTP is: " + otp + "\n\n" +
-            "This OTP is valid for 5 minutes.\n\n" +
-            "If you did not request this, please ignore this email.\n\n" +
-            "Regards,\nLoanMate Team"
-        );
+            message.setText(
+                "Hello,\n\n" +
+                "Your LoanMate password reset OTP is: " + otp + "\n\n" +
+                "This OTP is valid for 5 minutes.\n\n" +
+                "If you did not request this, please ignore this email.\n\n" +
+                "Regards,\nLoanMate Team"
+            );
 
-        mailSender.send(message);
+            mailSender.send(message);
+
+            logger.info("Password reset OTP email sent successfully.");
+
+        } catch (MailException e) {
+
+            logger.error("Failed to send password reset OTP email.", e);
+
+            throw new RuntimeException("Unable to send OTP email.", e);
+        }
     }
 }
-
