@@ -5,6 +5,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -20,6 +22,9 @@ import com.loanmanagement.loan_management_system.service.UserService;
 @RestController
 @RequestMapping("/user")
 public class UserController {
+	
+	private static final Logger logger =
+	        LoggerFactory.getLogger(UserController.class);
 
     @Autowired
     private UserService userService;
@@ -265,25 +270,33 @@ public class UserController {
     }
 
     // 8. Forgot Password - Public
-    @PostMapping("/forgot-password")
-    public ResponseEntity<?> forgotPassword(@RequestBody Map<String, String> data) {
 
-        String email = data.get("email");
+@PostMapping("/forgot-password")
+public ResponseEntity<?> forgotPassword(
+        @RequestBody Map<String, String> data) {
 
-        if (email == null || email.isBlank()) {
-            return ResponseEntity.badRequest()
-                    .body(Map.of("message", "Email is required"));
-        }
+    String email = data.get("email");
 
-        try {
-            passwordResetService.sendOtp(email);
-        } catch (Exception e) {
-            // Keep response generic
-        }
-
-        return ResponseEntity.ok(
-                Map.of("message", "If the account exists, an OTP will be sent."));
+    if (email == null || email.isBlank()) {
+        return ResponseEntity.badRequest()
+                .body(Map.of("message", "Email is required"));
     }
+
+    try {
+        passwordResetService.sendOtp(email);
+
+        logger.info("Password reset OTP email request completed.");
+
+    } catch (Exception e) {
+
+        logger.error("Password reset OTP email sending failed.", e);
+    }
+
+    return ResponseEntity.ok(
+        Map.of("message",
+        "If the account exists, an OTP will be sent.")
+    );
+}
 
     // 9. Verify OTP - Public
     @PostMapping("/verify-otp")
