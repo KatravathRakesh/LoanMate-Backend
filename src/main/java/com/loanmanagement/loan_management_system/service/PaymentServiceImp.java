@@ -135,6 +135,47 @@ public class PaymentServiceImp implements PaymentService {
 	public long countPendingPayments() {
 		 return payRepo.countByPaymentStatus("PENDING");
 	}
+ 
+	@Override
+	@Transactional
+	public Payment approvePayment(Long paymentId) {
 
+	    // 1. Find payment
+	    Payment payment = payRepo.findById(paymentId)
+	            .orElseThrow(() -> new RuntimeException("Payment not found"));
+
+	    // 2. Only pending payments can be approved
+	    if (!"PENDING".equalsIgnoreCase(payment.getPaymentStatus())) {
+	        throw new RuntimeException("Only pending payments can be approved");
+	    }
+
+	    // 3. Find associated loan
+	    Loan loan = loanRepo.findById(payment.getLoanId())
+	            .orElseThrow(() -> new RuntimeException("Loan not found"));
+
+	    // 4. Check loan ownership
+	    if (!loan.getUserId().equals(payment.getUserId())) {
+	        throw new RuntimeException("Payment and loan customer mismatch");
+	    }
+
+	    // 5. Check loan status
+	    if (!"ACTIVE".equalsIgnoreCase(loan.getStatus())) {
+	        throw new RuntimeException("Loan is not active");
+	    }
+
+	    // 6. Check remaining balance
+	    if (loan.getRemainingAmount() == null
+	            || payment.getAmount() > loan.getRemainingAmount()) {
+	        throw new RuntimeException("Payment exceeds remaining loan amount");
+	    }
+
+	    // 7. Update loan balance
+	    loanService.updateLoanPayment(payment.getLoanId(), payment.getAmount());
+
+	    // 8. Mark payment successful
+	    payment.setPaymentStatus("SUCCESS");
+
+	    return payRepo.save(payment);
+	}
 	
 }

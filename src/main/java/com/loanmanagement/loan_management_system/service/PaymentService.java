@@ -37,5 +37,7 @@ public interface PaymentService {
 	
 //	count Pending
 	long countPendingPayments();
+	
+	Payment approvePayment(Long paymentId);
 
 }

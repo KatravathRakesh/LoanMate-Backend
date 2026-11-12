@@ -75,6 +75,31 @@ public class PaymentController {
 
 		return ResponseEntity.ok(paymentService.getAllPayments());
 	}
+	
+	@PostMapping("/approve/{paymentId}")
+	public ResponseEntity<?> approvePayment(
+	        @PathVariable Long paymentId,
+	        Authentication authentication) {
+
+	    if (!isAdmin(authentication)) {
+	        return ResponseEntity.status(403)
+	                .body(Map.of("message", "Only Admin can approve payments"));
+	    }
+
+	    try {
+	        Payment payment = paymentService.approvePayment(paymentId);
+
+	        return ResponseEntity.ok(Map.of(
+	                "message", "Payment approved successfully",
+	                "paymentStatus", payment.getPaymentStatus()
+	        ));
+
+	    } catch (RuntimeException e) {
+	        return ResponseEntity.badRequest()
+	                .body(Map.of("message", e.getMessage()));
+	    }
+	}
+	
 
 	@GetMapping("/findPayById/{paymentId}")
 	public ResponseEntity<?> getPaymentById(@PathVariable Long paymentId, Authentication authentication) {
