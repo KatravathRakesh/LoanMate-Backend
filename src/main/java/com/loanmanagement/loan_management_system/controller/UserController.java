@@ -5,6 +5,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -22,9 +23,9 @@ import com.loanmanagement.loan_management_system.service.UserService;
 @RestController
 @RequestMapping("/user")
 public class UserController {
-	
-	private static final Logger logger =
-	        LoggerFactory.getLogger(UserController.class);
+
+    private static final Logger logger =
+            LoggerFactory.getLogger(UserController.class);
 
     @Autowired
     private UserService userService;
@@ -42,6 +43,13 @@ public class UserController {
     private boolean isAdmin(Authentication authentication) {
         return authentication.getAuthorities().stream()
                 .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+    }
+
+    // Check ADMIN or BACKUP_ADMIN role
+    private boolean isAdminOrBackupAdmin(Authentication authentication) {
+        return authentication.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN")
+                        || a.getAuthority().equals("ROLE_BACKUP_ADMIN"));
     }
 
     // Get currently logged-in user
@@ -94,7 +102,7 @@ public class UserController {
                 Map.of("message", "User registered successfully"));
     }
 
-    // 2. Find User - ADMIN or Account Owner
+    // 2. Find User - ADMIN, BACKUP_ADMIN or Account Owner
     @GetMapping("/{uid}")
     public ResponseEntity<?> findUser(
             @PathVariable Long uid,
@@ -106,7 +114,7 @@ public class UserController {
             return ResponseEntity.status(401).build();
         }
 
-        if (!isAdmin(authentication) && !currentUser.getUid().equals(uid)) {
+        if (!isAdminOrBackupAdmin(authentication) && !currentUser.getUid().equals(uid)) {
             return ResponseEntity.status(403)
                     .body(Map.of("message", "You can only view your own profile"));
         }
@@ -135,6 +143,7 @@ public class UserController {
             return ResponseEntity.status(401).build();
         }
 
+        // Backup Admin can update only their own profile
         if (!isAdmin(authentication) && !currentUser.getUid().equals(uid)) {
             return ResponseEntity.status(403)
                     .body(Map.of("message", "You can only update your own profile"));
@@ -252,13 +261,13 @@ public class UserController {
                 .body(Map.of("message", "Current password is incorrect"));
     }
 
-    // 7. Find All Users - ADMIN only
+    // 7. Find All Users - ADMIN and BACKUP_ADMIN
     @GetMapping("/all")
     public ResponseEntity<?> findAllUsers(Authentication authentication) {
 
-        if (!isAdmin(authentication)) {
+        if (!isAdminOrBackupAdmin(authentication)) {
             return ResponseEntity.status(403)
-                    .body(Map.of("message", "Only Admin can view all users"));
+                    .body(Map.of("message", "Access denied"));
         }
 
         List<Map<String, Object>> users = userService.findAllUsers()
@@ -270,33 +279,32 @@ public class UserController {
     }
 
     // 8. Forgot Password - Public
+    @PostMapping("/forgot-password")
+    public ResponseEntity<?> forgotPassword(
+            @RequestBody Map<String, String> data) {
 
-@PostMapping("/forgot-password")
-public ResponseEntity<?> forgotPassword(
-        @RequestBody Map<String, String> data) {
+        String email = data.get("email");
 
-    String email = data.get("email");
+        if (email == null || email.isBlank()) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("message", "Email is required"));
+        }
 
-    if (email == null || email.isBlank()) {
-        return ResponseEntity.badRequest()
-                .body(Map.of("message", "Email is required"));
+        try {
+            passwordResetService.sendOtp(email);
+
+            logger.info("Password reset OTP email request completed.");
+
+        } catch (Exception e) {
+
+            logger.error("Password reset OTP email sending failed.", e);
+        }
+
+        return ResponseEntity.ok(
+                Map.of("message",
+                        "If the account exists, an OTP will be sent.")
+        );
     }
-
-    try {
-        passwordResetService.sendOtp(email);
-
-        logger.info("Password reset OTP email request completed.");
-
-    } catch (Exception e) {
-
-        logger.error("Password reset OTP email sending failed.", e);
-    }
-
-    return ResponseEntity.ok(
-        Map.of("message",
-        "If the account exists, an OTP will be sent.")
-    );
-}
 
     // 9. Verify OTP - Public
     @PostMapping("/verify-otp")
@@ -347,5 +355,24 @@ public ResponseEntity<?> forgotPassword(
 
         return ResponseEntity.badRequest()
                 .body(Map.of("message", "Invalid or expired reset token"));
+    }
+    
+    
+ // Create Backup Admin - MAIN ADMIN only
+    @PostMapping("/create-backup-admin")
+    public ResponseEntity<?> createBackupAdmin(
+            @RequestBody User user,
+            Authentication authentication) {
+
+        if (!isAdmin(authentication)) {
+            return ResponseEntity.status(403)
+                    .body(Map.of("message", "Only Main Admin can create Backup Admin"));
+        }
+
+        user.setUid(null);
+        userService.registerBackupAdmin(user);
+
+        return ResponseEntity.ok(
+                Map.of("message", "Backup Admin created successfully"));
     }
 }

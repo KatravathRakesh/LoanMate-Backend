@@ -1,3 +1,4 @@
+
 package com.loanmanagement.loan_management_system.controller;
 
 import java.util.HashMap;
@@ -22,259 +23,270 @@ import java.time.LocalDate;
 import java.util.UUID;
 import com.loanmanagement.loan_management_system.repository.LoanRepository;
 
-
 @RestController
 @RequestMapping("/payments")
 public class PaymentController {
 
-	@Autowired
-	private PaymentService paymentService;
+    @Autowired
+    private PaymentService paymentService;
 
-	@Autowired
-	private UserRepository userRepository;
+    @Autowired
+    private UserRepository userRepository;
 
-	@Autowired
-	private LoanRepository loanRepository;
+    @Autowired
+    private LoanRepository loanRepository;
 
-	@PostMapping("/addPayments")
-	public ResponseEntity<?> addPayment(@RequestBody Payment payment, Authentication authentication) {
+    @PostMapping("/addPayments")
+    public ResponseEntity<?> addPayment(@RequestBody Payment payment, Authentication authentication) {
 
-		boolean isCustomer = authentication.getAuthorities().stream()
-				.anyMatch(a -> a.getAuthority().equals("ROLE_CUSTOMER"));
+        boolean isCustomer = authentication.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_CUSTOMER"));
 
-		if (!isCustomer) {
-			return ResponseEntity.status(403).body(Map.of("message", "Only Customers can initiate payments"));
-		}
+        if (!isCustomer) {
+            return ResponseEntity.status(403).body(Map.of("message", "Only Customers can initiate payments"));
+        }
 
-		User user = userRepository.findByEmail(authentication.getName());
+        User user = userRepository.findByEmail(authentication.getName());
 
-		if (user == null) {
-			return ResponseEntity.status(401).build();
-		}
+        if (user == null) {
+            return ResponseEntity.status(401).build();
+        }
 
-		// Set trusted values on the backend
-		payment.setPaymentId(null);
-		payment.setUserId(user.getUid());
-		payment.setPaymentStatus("PENDING");
-		payment.setPaymentDate(LocalDate.now().toString());
-		payment.setTransactionReference(UUID.randomUUID().toString());
+        // Set trusted values on the backend
+        payment.setPaymentId(null);
+        payment.setUserId(user.getUid());
+        payment.setPaymentStatus("PENDING");
+        payment.setPaymentDate(LocalDate.now().toString());
+        payment.setTransactionReference(UUID.randomUUID().toString());
 
-		paymentService.addPayment(payment);
+        paymentService.addPayment(payment);
 
-		return ResponseEntity.ok(Map.of("message", "Payment submitted successfully", "status", "PENDING"));
-	}
+        return ResponseEntity.ok(Map.of("message", "Payment submitted successfully", "status", "PENDING"));
+    }
 
-	@GetMapping("/GetAllPayments")
-	public ResponseEntity<?> getAllPayments(Authentication authentication) {
+    @GetMapping("/GetAllPayments")
+    public ResponseEntity<?> getAllPayments(Authentication authentication) {
 
-		boolean isAdmin = authentication.getAuthorities().stream().anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+        if (!isAdminOrBackupAdmin(authentication)) {
+            return ResponseEntity.status(403).body(Map.of("message", "Access denied"));
+        }
 
-		if (!isAdmin) {
-			return ResponseEntity.status(403).body(Map.of("message", "Only Admin can view all payments"));
-		}
+        return ResponseEntity.ok(paymentService.getAllPayments());
+    }
 
-		return ResponseEntity.ok(paymentService.getAllPayments());
-	}
-	
-	@PostMapping("/approve/{paymentId}")
-	public ResponseEntity<?> approvePayment(
-	        @PathVariable Long paymentId,
-	        Authentication authentication) {
+    @PostMapping("/approve/{paymentId}")
+    public ResponseEntity<?> approvePayment(
+            @PathVariable Long paymentId,
+            Authentication authentication) {
 
-	    if (!isAdmin(authentication)) {
-	        return ResponseEntity.status(403)
-	                .body(Map.of("message", "Only Admin can approve payments"));
-	    }
+        // Only Main Admin can approve payments
+        if (!isAdmin(authentication)) {
+            return ResponseEntity.status(403)
+                    .body(Map.of("message", "Only Admin can approve payments"));
+        }
 
-	    try {
-	        Payment payment = paymentService.approvePayment(paymentId);
+        try {
+            Payment payment = paymentService.approvePayment(paymentId);
 
-	        return ResponseEntity.ok(Map.of(
-	                "message", "Payment approved successfully",
-	                "paymentStatus", payment.getPaymentStatus()
-	        ));
+            return ResponseEntity.ok(Map.of(
+                    "message", "Payment approved successfully",
+                    "paymentStatus", payment.getPaymentStatus()
+            ));
 
-	    } catch (RuntimeException e) {
-	        return ResponseEntity.badRequest()
-	                .body(Map.of("message", e.getMessage()));
-	    }
-	}
-	
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("message", e.getMessage()));
+        }
+    }
 
-	@GetMapping("/findPayById/{paymentId}")
-	public ResponseEntity<?> getPaymentById(@PathVariable Long paymentId, Authentication authentication) {
+    @GetMapping("/findPayById/{paymentId}")
+    public ResponseEntity<?> getPaymentById(@PathVariable Long paymentId, Authentication authentication) {
 
-		boolean isAdmin = authentication.getAuthorities().stream().anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+        boolean isAdmin = isAdminOrBackupAdmin(authentication);
 
-		Payment payment = paymentService.getPaymentById(paymentId);
+        Payment payment = paymentService.getPaymentById(paymentId);
 
-		if (isAdmin) {
-			return ResponseEntity.ok(payment);
-		}
+        if (isAdmin) {
+            return ResponseEntity.ok(payment);
+        }
 
-		User user = userRepository.findByEmail(authentication.getName());
+        User user = userRepository.findByEmail(authentication.getName());
 
-		if (user == null) {
-			return ResponseEntity.status(401).build();
-		}
+        if (user == null) {
+            return ResponseEntity.status(401).build();
+        }
 
-		if (!payment.getUserId().equals(user.getUid())) {
-			return ResponseEntity.status(404).body(Map.of("message", "Payment not found"));
-		}
+        if (!payment.getUserId().equals(user.getUid())) {
+            return ResponseEntity.status(404).body(Map.of("message", "Payment not found"));
+        }
 
-		return ResponseEntity.ok(payment);
-	}
+        return ResponseEntity.ok(payment);
+    }
 
-	@GetMapping("/userID/{userId}")
-	public ResponseEntity<?> getPaymentsByUserId(@PathVariable Long userId, Authentication authentication) {
+    @GetMapping("/userID/{userId}")
+    public ResponseEntity<?> getPaymentsByUserId(@PathVariable Long userId, Authentication authentication) {
 
-		if (isAdmin(authentication)) {
-			return ResponseEntity.ok(paymentService.getPaymentsByUserId(userId));
-		}
+        if (isAdminOrBackupAdmin(authentication)) {
+            return ResponseEntity.ok(paymentService.getPaymentsByUserId(userId));
+        }
 
-		User user = getCurrentUser(authentication);
+        User user = getCurrentUser(authentication);
 
-		if (user == null) {
-			return ResponseEntity.status(401).build();
-		}
+        if (user == null) {
+            return ResponseEntity.status(401).build();
+        }
 
-		if (!user.getUid().equals(userId)) {
-			return ResponseEntity.status(403).body(Map.of("message", "Access denied"));
-		}
+        if (!user.getUid().equals(userId)) {
+            return ResponseEntity.status(403).body(Map.of("message", "Access denied"));
+        }
 
-		return ResponseEntity.ok(paymentService.getPaymentsByUserId(user.getUid()));
-	}
+        return ResponseEntity.ok(paymentService.getPaymentsByUserId(user.getUid()));
+    }
 
-	@GetMapping("/loanID/{loanId}")
-	public ResponseEntity<?> getPaymentsByLoanId(@PathVariable Long loanId, Authentication authentication) {
+    @GetMapping("/loanID/{loanId}")
+    public ResponseEntity<?> getPaymentsByLoanId(@PathVariable Long loanId, Authentication authentication) {
 
-		var loan = loanRepository.findById(loanId).orElse(null);
+        var loan = loanRepository.findById(loanId).orElse(null);
 
-		if (loan == null) {
-			return ResponseEntity.notFound().build();
-		}
+        if (loan == null) {
+            return ResponseEntity.notFound().build();
+        }
 
-		if (isAdmin(authentication)) {
-			return ResponseEntity.ok(paymentService.getPaymentsByLoanId(loanId));
-		}
+        if (isAdminOrBackupAdmin(authentication)) {
+            return ResponseEntity.ok(paymentService.getPaymentsByLoanId(loanId));
+        }
 
-		User user = getCurrentUser(authentication);
+        User user = getCurrentUser(authentication);
 
-		if (user == null) {
-			return ResponseEntity.status(401).build();
-		}
+        if (user == null) {
+            return ResponseEntity.status(401).build();
+        }
 
-		if (!loan.getUserId().equals(user.getUid())) {
-			return ResponseEntity.status(404).body(Map.of("message", "Loan not found"));
-		}
+        if (!loan.getUserId().equals(user.getUid())) {
+            return ResponseEntity.status(404).body(Map.of("message", "Loan not found"));
+        }
 
-		return ResponseEntity.ok(paymentService.getPaymentsByLoanId(loanId));
-	}
+        return ResponseEntity.ok(paymentService.getPaymentsByLoanId(loanId));
+    }
 
-	@GetMapping("/status/{paymentStatus}")
-	public ResponseEntity<?> getPaymentsByStatus(@PathVariable String paymentStatus, Authentication authentication) {
+    @GetMapping("/status/{paymentStatus}")
+    public ResponseEntity<?> getPaymentsByStatus(
+            @PathVariable String paymentStatus,
+            Authentication authentication) {
 
-		if (!isAdmin(authentication)) {
-			return ResponseEntity.status(403).body(Map.of("message", "Only Admin can access this API"));
-		}
+        if (!isAdminOrBackupAdmin(authentication)) {
+            return ResponseEntity.status(403).body(Map.of("message", "Access denied"));
+        }
 
-		return ResponseEntity.ok(paymentService.getPaymentsByStatus(paymentStatus));
-	}
+        return ResponseEntity.ok(paymentService.getPaymentsByStatus(paymentStatus));
+    }
 
-	@GetMapping("/count/status/{paymentStatus}")
-	public ResponseEntity<?> countPaymentsByStatus(@PathVariable String paymentStatus, Authentication authentication) {
+    @GetMapping("/count/status/{paymentStatus}")
+    public ResponseEntity<?> countPaymentsByStatus(
+            @PathVariable String paymentStatus,
+            Authentication authentication) {
 
-		if (!isAdmin(authentication)) {
-			return ResponseEntity.status(403).body(Map.of("message", "Only Admin can access this API"));
-		}
+        if (!isAdminOrBackupAdmin(authentication)) {
+            return ResponseEntity.status(403).body(Map.of("message", "Access denied"));
+        }
 
-		return ResponseEntity.ok(paymentService.countPaymentsByStatus(paymentStatus));
-	}
+        return ResponseEntity.ok(paymentService.countPaymentsByStatus(paymentStatus));
+    }
 
-	@GetMapping("/user/{userId}/total-paid")
-	public ResponseEntity<?> getTotalPaidByUserId(@PathVariable Long userId, Authentication authentication) {
+    @GetMapping("/user/{userId}/total-paid")
+    public ResponseEntity<?> getTotalPaidByUserId(
+            @PathVariable Long userId,
+            Authentication authentication) {
 
-		if (isAdmin(authentication)) {
-			return ResponseEntity.ok(paymentService.getTotalPaidByUserId(userId));
-		}
+        if (isAdminOrBackupAdmin(authentication)) {
+            return ResponseEntity.ok(paymentService.getTotalPaidByUserId(userId));
+        }
 
-		User user = getCurrentUser(authentication);
+        User user = getCurrentUser(authentication);
 
-		if (user == null) {
-			return ResponseEntity.status(401).build();
-		}
+        if (user == null) {
+            return ResponseEntity.status(401).build();
+        }
 
-		if (!user.getUid().equals(userId)) {
-			return ResponseEntity.status(403).body(Map.of("message", "Access denied"));
-		}
+        if (!user.getUid().equals(userId)) {
+            return ResponseEntity.status(403).body(Map.of("message", "Access denied"));
+        }
 
-		return ResponseEntity.ok(paymentService.getTotalPaidByUserId(user.getUid()));
-	}
+        return ResponseEntity.ok(paymentService.getTotalPaidByUserId(user.getUid()));
+    }
 
-	@GetMapping("/countAllPayments")
-	public ResponseEntity<?> countAllPayments(Authentication authentication) {
+    @GetMapping("/countAllPayments")
+    public ResponseEntity<?> countAllPayments(Authentication authentication) {
 
-		if (!isAdmin(authentication)) {
-			return ResponseEntity.status(403).build();
-		}
+        if (!isAdminOrBackupAdmin(authentication)) {
+            return ResponseEntity.status(403).build();
+        }
 
-		return ResponseEntity.ok(paymentService.countAllPayments());
-	}
+        return ResponseEntity.ok(paymentService.countAllPayments());
+    }
 
-	@GetMapping("/count/successful")
-	public ResponseEntity<?> countSuccessfulPayments(Authentication authentication) {
+    @GetMapping("/count/successful")
+    public ResponseEntity<?> countSuccessfulPayments(Authentication authentication) {
 
-		if (!isAdmin(authentication)) {
-			return ResponseEntity.status(403).build();
-		}
+        if (!isAdminOrBackupAdmin(authentication)) {
+            return ResponseEntity.status(403).build();
+        }
 
-		return ResponseEntity.ok(paymentService.countSuccessfulPayments());
-	}
+        return ResponseEntity.ok(paymentService.countSuccessfulPayments());
+    }
 
-	@GetMapping("/count/failed")
-	public ResponseEntity<?> countFailedPayments(Authentication authentication) {
+    @GetMapping("/count/failed")
+    public ResponseEntity<?> countFailedPayments(Authentication authentication) {
 
-		if (!isAdmin(authentication)) {
-			return ResponseEntity.status(403).build();
-		}
+        if (!isAdminOrBackupAdmin(authentication)) {
+            return ResponseEntity.status(403).build();
+        }
 
-		return ResponseEntity.ok(paymentService.countFailedPayments());
-	}
+        return ResponseEntity.ok(paymentService.countFailedPayments());
+    }
 
-	@GetMapping("/count/pending")
-	public ResponseEntity<?> countPendingPayments(Authentication authentication) {
+    @GetMapping("/count/pending")
+    public ResponseEntity<?> countPendingPayments(Authentication authentication) {
 
-		if (!isAdmin(authentication)) {
-			return ResponseEntity.status(403).build();
-		}
+        if (!isAdminOrBackupAdmin(authentication)) {
+            return ResponseEntity.status(403).build();
+        }
 
-		return ResponseEntity.ok(paymentService.countPendingPayments());
-	}
+        return ResponseEntity.ok(paymentService.countPendingPayments());
+    }
 
-	@GetMapping("/summary")
-	public ResponseEntity<?> getPaymentSummary(Authentication authentication) {
+    @GetMapping("/summary")
+    public ResponseEntity<?> getPaymentSummary(Authentication authentication) {
 
-		if (!isAdmin(authentication)) {
-			return ResponseEntity.status(403).build();
-		}
+        if (!isAdminOrBackupAdmin(authentication)) {
+            return ResponseEntity.status(403).build();
+        }
 
-		Map<String, Long> summary = new HashMap<>();
+        Map<String, Long> summary = new HashMap<>();
 
-		summary.put("totalPayments", paymentService.countAllPayments());
-		summary.put("successfulPayments", paymentService.countSuccessfulPayments());
-		summary.put("failedPayments", paymentService.countFailedPayments());
-		summary.put("pendingPayments", paymentService.countPendingPayments());
+        summary.put("totalPayments", paymentService.countAllPayments());
+        summary.put("successfulPayments", paymentService.countSuccessfulPayments());
+        summary.put("failedPayments", paymentService.countFailedPayments());
+        summary.put("pendingPayments", paymentService.countPendingPayments());
 
-		return ResponseEntity.ok(summary);
-	}
+        return ResponseEntity.ok(summary);
+    }
 
-	private boolean isAdmin(Authentication authentication) {
+    private boolean isAdmin(Authentication authentication) {
 
-		return authentication.getAuthorities().stream().anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
-	}
+        return authentication.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+    }
 
-	private User getCurrentUser(Authentication authentication) {
+    private boolean isAdminOrBackupAdmin(Authentication authentication) {
 
-		return userRepository.findByEmail(authentication.getName());
-	}
+        return authentication.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN")
+                        || a.getAuthority().equals("ROLE_BACKUP_ADMIN"));
+    }
+
+    private User getCurrentUser(Authentication authentication) {
+
+        return userRepository.findByEmail(authentication.getName());
+    }
 }

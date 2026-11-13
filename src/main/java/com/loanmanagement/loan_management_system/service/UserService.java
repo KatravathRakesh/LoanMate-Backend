@@ -8,6 +8,9 @@ public interface UserService {
 
 	// Register a new customer
 	void registerUser(User u);
+	
+	// Register a new Backup Admin
+	void registerBackupAdmin(User user);
 
 	// Find a customer
 	User findUser(Long uid);

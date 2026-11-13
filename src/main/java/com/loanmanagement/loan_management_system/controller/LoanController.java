@@ -1,7 +1,7 @@
+
 package com.loanmanagement.loan_management_system.controller;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,259 +24,251 @@ import org.springframework.security.core.Authentication;
 @RequestMapping("/loans")
 public class LoanController {
 
-	@Autowired
-	private LoanService loanService;
+    @Autowired
+    private LoanService loanService;
 
-	@Autowired
-	private UserRepository userRepository;
+    @Autowired
+    private UserRepository userRepository;
 
-	@PostMapping("/addLoan")
-	public ResponseEntity<?> addLoan(@RequestBody Loan loan, Authentication authentication) {
+    @PostMapping("/addLoan")
+    public ResponseEntity<?> addLoan(@RequestBody Loan loan, Authentication authentication) {
 
-		boolean isCustomer = authentication.getAuthorities().stream()
-				.anyMatch(a -> a.getAuthority().equals("ROLE_CUSTOMER"));
+        boolean isCustomer = authentication.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_CUSTOMER"));
 
-		if (!isCustomer) {
-			return ResponseEntity.status(403).body(Map.of("message", "Only Customers can create loans"));
-		}
+        if (!isCustomer) {
+            return ResponseEntity.status(403).body(Map.of("message", "Only Customers can create loans"));
+        }
 
-		var user = userRepository.findByEmail(authentication.getName());
+        var user = userRepository.findByEmail(authentication.getName());
 
-		if (user == null) {
-			return ResponseEntity.status(401).build();
-		}
+        if (user == null) {
+            return ResponseEntity.status(401).build();
+        }
 
-		// Always take the customer ID from the authenticated user
-		loan.setUserId(user.getUid());
+        loan.setUserId(user.getUid());
+        loan.setLoanId(null);
 
-		// Do not accept a loan ID from the frontend
-		loan.setLoanId(null);
+        loanService.addLoan(loan);
 
-		loanService.addLoan(loan);
+        return ResponseEntity.ok(Map.of("message", "Loan added successfully"));
+    }
 
-		return ResponseEntity.ok(Map.of("message", "Loan added successfully"));
-	}
+    @GetMapping("/getAllLoan")
+    public ResponseEntity<?> findAllLoan(Authentication authentication) {
 
-	@GetMapping("/getAllLoan")
-	public List<Loan> findAllLoan() {
-		return loanService.getAllLoans();
-	}
+        if (!isAdminOrBackupAdmin(authentication)) {
+            return ResponseEntity.status(403).body(Map.of("message", "Access denied"));
+        }
 
-	@GetMapping("/getLoan/{loanId}")
-	public ResponseEntity<?> findLoanById(@PathVariable Long loanId, Authentication authentication) {
+        return ResponseEntity.ok(loanService.getAllLoans());
+    }
 
-		boolean isAdmin = authentication.getAuthorities().stream()
-				.anyMatch(authority -> authority.getAuthority().equals("ROLE_ADMIN"));
+    @GetMapping("/getLoan/{loanId}")
+    public ResponseEntity<?> findLoanById(@PathVariable Long loanId, Authentication authentication) {
 
-		if (isAdmin) {
-			return ResponseEntity.ok(loanService.getLoanById(loanId));
-		}
+        boolean isAdmin = isAdminOrBackupAdmin(authentication);
 
-		var user = userRepository.findByEmail(authentication.getName());
+        if (isAdmin) {
+            return ResponseEntity.ok(loanService.getLoanById(loanId));
+        }
 
-		if (user == null) {
-			return ResponseEntity.status(401).build();
-		}
+        var user = userRepository.findByEmail(authentication.getName());
 
-		Loan loan = loanService.getLoanByIdAndUserId(loanId, user.getUid());
+        if (user == null) {
+            return ResponseEntity.status(401).build();
+        }
 
-		if (loan == null) {
-			return ResponseEntity.notFound().build();
-		}
+        Loan loan = loanService.getLoanByIdAndUserId(loanId, user.getUid());
 
-		return ResponseEntity.ok(loan);
-	}
+        if (loan == null) {
+            return ResponseEntity.notFound().build();
+        }
 
-	@GetMapping("/GetLoanByStatus/{status}")
-	public ResponseEntity<?> getLoansByUserId(@PathVariable String status, Authentication authentication) {
+        return ResponseEntity.ok(loan);
+    }
 
-		boolean isAdmin = authentication.getAuthorities().stream()
-				.anyMatch(authority -> authority.getAuthority().equals("ROLE_ADMIN"));
+    @GetMapping("/GetLoanByStatus/{status}")
+    public ResponseEntity<?> getLoansByUserId(@PathVariable String status, Authentication authentication) {
 
-		if (!isAdmin) {
-			return ResponseEntity.status(403).body(Map.of("message", "Only Admin can access this API"));
-		}
+        if (!isAdminOrBackupAdmin(authentication)) {
+            return ResponseEntity.status(403).body(Map.of("message", "Access denied"));
+        }
 
-		return ResponseEntity.ok(loanService.getLoanByStatus(status));
-	}
+        return ResponseEntity.ok(loanService.getLoanByStatus(status));
+    }
 
-	@GetMapping("/GetLoanByUserId/{userId}")
-	public ResponseEntity<?> getLoansByUserId(@PathVariable Long userId, Authentication authentication) {
+    @GetMapping("/GetLoanByUserId/{userId}")
+    public ResponseEntity<?> getLoansByUserId(@PathVariable Long userId, Authentication authentication) {
 
-		boolean isAdmin = authentication.getAuthorities().stream()
-				.anyMatch(authority -> authority.getAuthority().equals("ROLE_ADMIN"));
+        if (isAdminOrBackupAdmin(authentication)) {
+            return ResponseEntity.ok(loanService.getLoanByUserId(userId));
+        }
 
-		if (isAdmin) {
-			return ResponseEntity.ok(loanService.getLoanByUserId(userId));
-		}
+        var user = userRepository.findByEmail(authentication.getName());
 
-		var user = userRepository.findByEmail(authentication.getName());
+        if (user == null) {
+            return ResponseEntity.status(401).build();
+        }
 
-		if (user == null) {
-			return ResponseEntity.status(401).build();
-		}
+        if (!user.getUid().equals(userId)) {
+            return ResponseEntity.status(403).body(Map.of("message", "You cannot access another customer's loans"));
+        }
 
-		if (!user.getUid().equals(userId)) {
-			return ResponseEntity.status(403).body(Map.of("message", "You cannot access another customer's loans"));
-		}
+        return ResponseEntity.ok(loanService.getLoanByUserId(user.getUid()));
+    }
 
-		return ResponseEntity.ok(loanService.getLoanByUserId(user.getUid()));
-	}
+    @GetMapping("/count")
+    public ResponseEntity<?> countLoans(Authentication authentication) {
 
-	@GetMapping("/count")
-	public ResponseEntity<?> countLoans(Authentication authentication) {
+        if (!isAdminOrBackupAdmin(authentication)) {
+            return ResponseEntity.status(403).body(Map.of("message", "Access denied"));
+        }
 
-		boolean isAdmin = authentication.getAuthorities().stream()
-				.anyMatch(authority -> authority.getAuthority().equals("ROLE_ADMIN"));
+        return ResponseEntity.ok(loanService.countLoans());
+    }
 
-		if (!isAdmin) {
-			return ResponseEntity.status(403).body(Map.of("message", "Only Admin can access this API"));
-		}
+    @GetMapping("/count/active")
+    public ResponseEntity<?> countActiveLoans(Authentication authentication) {
 
-		return ResponseEntity.ok(loanService.countLoans());
-	}
+        if (!isAdminOrBackupAdmin(authentication)) {
+            return ResponseEntity.status(403).body(Map.of("message", "Access denied"));
+        }
 
-	@GetMapping("/count/active")
-	public ResponseEntity<?> countActiveLoans(Authentication authentication) {
+        return ResponseEntity.ok(loanService.countActiveLoans());
+    }
 
-		boolean isAdmin = authentication.getAuthorities().stream()
-				.anyMatch(authority -> authority.getAuthority().equals("ROLE_ADMIN"));
+    @PutMapping("/updatebyId/{loanId}/status")
+    public ResponseEntity<?> updateLoanStatus(@PathVariable Long loanId, @RequestBody String status,
+            Authentication authentication) {
 
-		if (!isAdmin) {
-			return ResponseEntity.status(403).body(Map.of("message", "Only Admin can access this API"));
-		}
+        boolean isAdmin = authentication.getAuthorities().stream()
+                .anyMatch(authority -> authority.getAuthority().equals("ROLE_ADMIN"));
 
-		return ResponseEntity.ok(loanService.countActiveLoans());
-	}
+        if (!isAdmin) {
+            return ResponseEntity.status(403).body(Map.of("message", "Only Admin can update loan status"));
+        }
 
-	@PutMapping("/updatebyId/{loanId}/status")
-	public ResponseEntity<?> updateLoanStatus(@PathVariable Long loanId, @RequestBody String status,
-			Authentication authentication) {
+        Loan updatedLoan = loanService.updateLoanStatus(loanId, status);
 
-		boolean isAdmin = authentication.getAuthorities().stream()
-				.anyMatch(authority -> authority.getAuthority().equals("ROLE_ADMIN"));
+        return ResponseEntity.ok(Map.of("message", "Loan status updated successfully", "loanId",
+                updatedLoan.getLoanId(), "status", updatedLoan.getStatus()));
+    }
 
-		if (!isAdmin) {
-			return ResponseEntity.status(403).body(Map.of("message", "Only Admin can update loan status"));
-		}
+    @DeleteMapping("/deleteLoanById/{loanId}")
+    public ResponseEntity<?> deleteLoanByid(@PathVariable Long loanId, Authentication authentication) {
 
-		Loan updatedLoan = loanService.updateLoanStatus(loanId, status);
+        boolean isAdmin = authentication.getAuthorities().stream()
+                .anyMatch(authority -> authority.getAuthority().equals("ROLE_ADMIN"));
 
-		return ResponseEntity.ok(Map.of("message", "Loan status updated successfully", "loanId",
-				updatedLoan.getLoanId(), "status", updatedLoan.getStatus()));
-	}
+        if (!isAdmin) {
+            return ResponseEntity.status(403).body(Map.of("message", "Only Admin can delete loans"));
+        }
 
-	@DeleteMapping("/deleteLoanById/{loanId}")
-	public ResponseEntity<?> deleteLoanByid(@PathVariable Long loanId, Authentication authentication) {
+        loanService.deleteLoan(loanId);
 
-		boolean isAdmin = authentication.getAuthorities().stream()
-				.anyMatch(authority -> authority.getAuthority().equals("ROLE_ADMIN"));
+        return ResponseEntity.ok(Map.of("message", "Loan deleted successfully"));
+    }
 
-		if (!isAdmin) {
-			return ResponseEntity.status(403).body(Map.of("message", "Only Admin can delete loans"));
-		}
+    @GetMapping("/{loanId}/summary")
+    public ResponseEntity<?> getLoanSummary(@PathVariable Long loanId, Authentication authentication) {
 
-		loanService.deleteLoan(loanId);
+        Loan loan;
 
-		return ResponseEntity.ok(Map.of("message", "Loan deleted successfully"));
-	}
+        if (isAdminOrBackupAdmin(authentication)) {
+            loan = loanService.getLoanById(loanId);
+        } else {
+            var user = userRepository.findByEmail(authentication.getName());
 
-	@GetMapping("/{loanId}/summary")
-	public ResponseEntity<?> getLoanSummary(@PathVariable Long loanId, Authentication authentication) {
+            if (user == null) {
+                return ResponseEntity.status(401).build();
+            }
 
-		boolean isAdmin = authentication.getAuthorities().stream()
-				.anyMatch(authority -> authority.getAuthority().equals("ROLE_ADMIN"));
+            loan = loanService.getLoanByIdAndUserId(loanId, user.getUid());
 
-		Loan loan;
+            if (loan == null) {
+                return ResponseEntity.notFound().build();
+            }
+        }
 
-		if (isAdmin) {
-			loan = loanService.getLoanById(loanId);
-		} else {
-			var user = userRepository.findByEmail(authentication.getName());
+        Map<String, Object> summary = new HashMap<>();
 
-			if (user == null) {
-				return ResponseEntity.status(401).build();
-			}
+        summary.put("loanId", loan.getLoanId());
+        summary.put("loanAmount", loan.getLoanAmount());
+        summary.put("totalPaid", loan.getTotalPaid());
+        summary.put("remainingAmount", loan.getRemainingAmount());
+        summary.put("status", loan.getStatus());
 
-			loan = loanService.getLoanByIdAndUserId(loanId, user.getUid());
+        return ResponseEntity.ok(summary);
+    }
 
-			if (loan == null) {
-				return ResponseEntity.notFound().build();
-			}
-		}
+    @GetMapping("/user/{userId}/active")
+    public ResponseEntity<?> getActiveLoansByUserId(@PathVariable Long userId, Authentication authentication) {
 
-		Map<String, Object> summary = new HashMap<>();
+        boolean isAdmin = isAdminOrBackupAdmin(authentication);
 
-		summary.put("loanId", loan.getLoanId());
-		summary.put("loanAmount", loan.getLoanAmount());
-		summary.put("totalPaid", loan.getTotalPaid());
-		summary.put("remainingAmount", loan.getRemainingAmount());
-		summary.put("status", loan.getStatus());
+        var user = userRepository.findByEmail(authentication.getName());
 
-		return ResponseEntity.ok(summary);
-	}
+        if (user == null) {
+            return ResponseEntity.status(401).build();
+        }
 
-	@GetMapping("/user/{userId}/active")
-	public ResponseEntity<?> getActiveLoansByUserId(@PathVariable Long userId, Authentication authentication) {
+        if (!isAdmin && !user.getUid().equals(userId)) {
+            return ResponseEntity.status(403).body(Map.of("message", "Access denied"));
+        }
 
-		boolean isAdmin = authentication.getAuthorities().stream().anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+        return ResponseEntity.ok(loanService.getLoanByUserId(userId).stream()
+                .filter(loan -> "ACTIVE".equalsIgnoreCase(loan.getStatus())).toList());
+    }
 
-		var user = userRepository.findByEmail(authentication.getName());
+    @GetMapping("/user/{userId}/active/total")
+    public ResponseEntity<?> getTotalActiveLoanAmount(@PathVariable Long userId, Authentication authentication) {
 
-		if (user == null) {
-			return ResponseEntity.status(401).build();
-		}
+        boolean isAdmin = isAdminOrBackupAdmin(authentication);
 
-		if (!isAdmin && !user.getUid().equals(userId)) {
-			return ResponseEntity.status(403).body(Map.of("message", "Access denied"));
-		}
+        var user = userRepository.findByEmail(authentication.getName());
 
-		return ResponseEntity.ok(loanService.getLoanByUserId(userId).stream()
-				.filter(loan -> "ACTIVE".equalsIgnoreCase(loan.getStatus())).toList());
-	}
+        if (user == null) {
+            return ResponseEntity.status(401).build();
+        }
 
-	@GetMapping("/user/{userId}/active/total")
-	public ResponseEntity<?> getTotalActiveLoanAmount(@PathVariable Long userId, Authentication authentication) {
+        if (!isAdmin && !user.getUid().equals(userId)) {
+            return ResponseEntity.status(403).body(Map.of("message", "Access denied"));
+        }
 
-		boolean isAdmin = authentication.getAuthorities().stream().anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+        double total = loanService.getLoanByUserId(userId).stream()
+                .filter(loan -> "ACTIVE".equalsIgnoreCase(loan.getStatus()))
+                .mapToDouble(loan -> loan.getLoanAmount() == null ? 0.0 : loan.getLoanAmount()).sum();
 
-		var user = userRepository.findByEmail(authentication.getName());
+        return ResponseEntity.ok(total);
+    }
 
-		if (user == null) {
-			return ResponseEntity.status(401).build();
-		}
+    @GetMapping("/user/{userId}/active/remaining")
+    public ResponseEntity<?> getTotalRemainingAmount(@PathVariable Long userId, Authentication authentication) {
 
-		if (!isAdmin && !user.getUid().equals(userId)) {
-			return ResponseEntity.status(403).body(Map.of("message", "Access denied"));
-		}
+        boolean isAdmin = isAdminOrBackupAdmin(authentication);
 
-		double total = loanService.getLoanByUserId(userId).stream()
-				.filter(loan -> "ACTIVE".equalsIgnoreCase(loan.getStatus()))
-				.mapToDouble(loan -> loan.getLoanAmount() == null ? 0.0 : loan.getLoanAmount()).sum();
+        var user = userRepository.findByEmail(authentication.getName());
 
-		return ResponseEntity.ok(total);
-	}
+        if (user == null) {
+            return ResponseEntity.status(401).build();
+        }
 
-	@GetMapping("/user/{userId}/active/remaining")
-	public ResponseEntity<?> getTotalRemainingAmount(@PathVariable Long userId, Authentication authentication) {
+        if (!isAdmin && !user.getUid().equals(userId)) {
+            return ResponseEntity.status(403).body(Map.of("message", "Access denied"));
+        }
 
-		boolean isAdmin = authentication.getAuthorities().stream().anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+        double total = loanService.getLoanByUserId(userId).stream()
+                .filter(loan -> "ACTIVE".equalsIgnoreCase(loan.getStatus()))
+                .mapToDouble(loan -> loan.getRemainingAmount() == null ? 0.0 : loan.getRemainingAmount()).sum();
 
-		var user = userRepository.findByEmail(authentication.getName());
+        return ResponseEntity.ok(total);
+    }
 
-		if (user == null) {
-			return ResponseEntity.status(401).build();
-		}
+    private boolean isAdminOrBackupAdmin(Authentication authentication) {
 
-		if (!isAdmin && !user.getUid().equals(userId)) {
-			return ResponseEntity.status(403).body(Map.of("message", "Access denied"));
-		}
-
-		double total = loanService.getLoanByUserId(userId).stream()
-				.filter(loan -> "ACTIVE".equalsIgnoreCase(loan.getStatus()))
-				.mapToDouble(loan -> loan.getRemainingAmount() == null ? 0.0 : loan.getRemainingAmount()).sum();
-
-		return ResponseEntity.ok(total);
-	}
-
+        return authentication.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN")
+                        || a.getAuthority().equals("ROLE_BACKUP_ADMIN"));
+    }
 }

@@ -42,6 +42,30 @@ public class UserServiceImp implements UserService {
 
 		userRepo.save(user);
 	}
+	
+	// Register Backup Admin
+	@Override
+	public void registerBackupAdmin(User user) {
+
+	    if (user.getEmail() == null || user.getEmail().isBlank()) {
+	        throw new IllegalArgumentException("Email is required");
+	    }
+
+	    if (user.getPassword() == null || user.getPassword().length() < 8) {
+	        throw new IllegalArgumentException("Password must contain at least 8 characters");
+	    }
+
+	    if (userRepo.existsByEmail(user.getEmail())) {
+	        throw new IllegalArgumentException("Email already registered");
+	    }
+
+	    // Backend controls ID, role and password
+	    user.setUid(null);
+	    user.setRole("BACKUP_ADMIN");
+	    user.setPassword(passwordEncoder.encode(user.getPassword()));
+
+	    userRepo.save(user);
+	}
 
 	// 2. Find User By ID
 	@Override

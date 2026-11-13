@@ -1,7 +1,6 @@
 
 package com.loanmanagement.loan_management_system.controller;
 
-
 import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,10 +26,18 @@ public class LoanApplicationController {
     @Autowired
     private UserRepository userRepository;
 
-    // Check whether logged-in user is ADMIN
+    // Check ADMIN role
     private boolean isAdmin(Authentication authentication) {
         return authentication.getAuthorities().stream()
                 .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+    }
+
+    // Check ADMIN or BACKUP_ADMIN role
+    private boolean isAdminOrBackupAdmin(Authentication authentication) {
+        return authentication.getAuthorities().stream()
+                .anyMatch(a ->
+                        a.getAuthority().equals("ROLE_ADMIN") ||
+                        a.getAuthority().equals("ROLE_BACKUP_ADMIN"));
     }
 
     // Get logged-in user from JWT email
@@ -68,27 +75,27 @@ public class LoanApplicationController {
                 Map.of("message", "Loan application submitted successfully"));
     }
 
-    // 2. Find All Applications - ADMIN only
+    // 2. Find All Applications - ADMIN or BACKUP_ADMIN
     @GetMapping("/findAllLoan")
     public ResponseEntity<?> findAllLoan(Authentication authentication) {
 
-        if (!isAdmin(authentication)) {
+        if (!isAdminOrBackupAdmin(authentication)) {
             return ResponseEntity.status(403)
-                    .body(Map.of("message", "Only Admin can view all applications"));
+                    .body(Map.of("message", "Access denied"));
         }
 
         return ResponseEntity.ok(loanService.findAllLoan());
     }
 
-    // 3. Find Application By ID - ADMIN only
+    // 3. Find Application By ID - ADMIN or BACKUP_ADMIN
     @GetMapping("/findById/{applicationId}")
     public ResponseEntity<?> findLoanById(
             @PathVariable Long applicationId,
             Authentication authentication) {
 
-        if (!isAdmin(authentication)) {
+        if (!isAdminOrBackupAdmin(authentication)) {
             return ResponseEntity.status(403)
-                    .body(Map.of("message", "Only Admin can view this application"));
+                    .body(Map.of("message", "Access denied"));
         }
 
         LoanApplication loan = loanService.findLoanById(applicationId);
@@ -142,7 +149,7 @@ public class LoanApplicationController {
                 Map.of("message", "Loan application deleted successfully"));
     }
 
-    // 6. Find Applications By User ID - ADMIN or Account Owner
+    // 6. Find Applications By User ID - ADMIN, BACKUP_ADMIN or Account Owner
     @GetMapping("/user/{userId}")
     public ResponseEntity<?> findLoanByUserId(
             @PathVariable Long userId,
@@ -154,7 +161,8 @@ public class LoanApplicationController {
             return ResponseEntity.status(401).build();
         }
 
-        if (!isAdmin(authentication) && !user.getUid().equals(userId)) {
+        if (!isAdminOrBackupAdmin(authentication) &&
+                !user.getUid().equals(userId)) {
             return ResponseEntity.status(403)
                     .body(Map.of("message", "You can only view your own applications"));
         }
@@ -162,69 +170,69 @@ public class LoanApplicationController {
         return ResponseEntity.ok(loanService.findLoansByUserId(userId));
     }
 
-    // 7. Find Applications By Status - ADMIN only
+    // 7. Find Applications By Status - ADMIN or BACKUP_ADMIN
     @GetMapping("/loan/status/{status}")
     public ResponseEntity<?> findLoanByStatus(
             @PathVariable String status,
             Authentication authentication) {
 
-        if (!isAdmin(authentication)) {
+        if (!isAdminOrBackupAdmin(authentication)) {
             return ResponseEntity.status(403)
-                    .body(Map.of("message", "Only Admin can view applications by status"));
+                    .body(Map.of("message", "Access denied"));
         }
 
         return ResponseEntity.ok(loanService.findLoanByStatus(status));
     }
 
-    // 8. Count Pending Applications - ADMIN only
+    // 8. Count Pending Applications - ADMIN or BACKUP_ADMIN
     @GetMapping("/count/pending")
     public ResponseEntity<?> countPendingApplications(Authentication authentication) {
 
-        if (!isAdmin(authentication)) {
+        if (!isAdminOrBackupAdmin(authentication)) {
             return ResponseEntity.status(403).build();
         }
 
         return ResponseEntity.ok(loanService.countPendingApplications());
     }
 
-    // 9. Count Approved Applications - ADMIN only
+    // 9. Count Approved Applications - ADMIN or BACKUP_ADMIN
     @GetMapping("/count/Approved")
     public ResponseEntity<?> countApprovedApplication(Authentication authentication) {
 
-        if (!isAdmin(authentication)) {
+        if (!isAdminOrBackupAdmin(authentication)) {
             return ResponseEntity.status(403).build();
         }
 
         return ResponseEntity.ok(loanService.countApprovedApplications());
     }
 
-    // 10. Count Rejected Applications - ADMIN only
+    // 10. Count Rejected Applications - ADMIN or BACKUP_ADMIN
     @GetMapping("/count/Rejected")
     public ResponseEntity<?> countRejectedApplication(Authentication authentication) {
 
-        if (!isAdmin(authentication)) {
+        if (!isAdminOrBackupAdmin(authentication)) {
             return ResponseEntity.status(403).build();
         }
 
         return ResponseEntity.ok(loanService.countRejectedApplications());
     }
 
-    // 11. Count All Applications - ADMIN only
+    // 11. Count All Applications - ADMIN or BACKUP_ADMIN
     @GetMapping("/countAll")
     public ResponseEntity<?> countAllApplication(Authentication authentication) {
 
-        if (!isAdmin(authentication)) {
+        if (!isAdminOrBackupAdmin(authentication)) {
             return ResponseEntity.status(403).build();
         }
 
         return ResponseEntity.ok(loanService.countAllApplications());
     }
 
-    // 12. Find Approved Applications - ADMIN only
+    // 12. Find Approved Applications - ADMIN or BACKUP_ADMIN
     @GetMapping("/status/approved")
     public ResponseEntity<?> getApprovedApplications(Authentication authentication) {
 
-        if (!isAdmin(authentication)) {
+        if (!isAdminOrBackupAdmin(authentication)) {
             return ResponseEntity.status(403).build();
         }
 

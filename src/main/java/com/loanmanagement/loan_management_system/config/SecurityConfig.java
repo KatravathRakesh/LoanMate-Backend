@@ -48,8 +48,8 @@ public class SecurityConfig {
 								"/user/reset-password")
 						.permitAll()
 
-						// Admin-only APIs
-						.requestMatchers("/user/all").hasRole("ADMIN")
+						// Main Admin and Backup Admin APIs
+						.requestMatchers("/user/all").hasAnyRole("ADMIN", "BACKUP_ADMIN")
 
 						// All remaining APIs require authentication
 						.requestMatchers("/user/**", "/loan/**", "/loans/**", "/payments/**").authenticated()
